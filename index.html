@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>THREES</title><script src="/socket.io/socket.io.js"></script>
+<style>
+:root{--bg:#09110d;--felt:#10442f;--gold:#f2c65b;--muted:#9fb1a8;--white:#fff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#24563e,#09110d 65%);color:var(--white);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}.app{max-width:900px;margin:auto;padding:14px}.hidden{display:none!important}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.logo{font-weight:950;letter-spacing:.18em}.room{font-size:11px;color:var(--muted)}
+.panel{background:#ffffff08;border:1px solid #ffffff16;border-radius:20px;padding:20px}.center{text-align:center}.title{font-size:48px;font-weight:950;letter-spacing:.1em;margin:20px 0 8px}.muted{color:var(--muted)}input{background:#07100c;color:#fff;border:1px solid #ffffff20;border-radius:12px;padding:13px;width:100%;max-width:300px;margin:5px}button{border:0;border-radius:12px;padding:12px 16px;font-weight:850;cursor:pointer}button.primary{background:var(--gold);color:#111}button.secondary{background:#ffffff12;color:#fff;border:1px solid #ffffff1f}.row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.table{background:linear-gradient(145deg,var(--felt),#0b2d20);border:6px solid #071f16;border-radius:28px;min-height:390px;padding:16px;box-shadow:inset 0 0 60px #0007}.players{display:flex;gap:7px;justify-content:center;flex-wrap:wrap}.player{padding:7px 10px;border-radius:10px;background:#ffffff0b;font-size:12px}.active{outline:2px solid var(--gold)}.centerpile{min-height:220px;display:grid;place-items:center}.card{width:61px;height:88px;background:#fff;color:#111;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:950;box-shadow:0 5px 14px #0006;cursor:pointer;user-select:none}.card .r{font-size:24px}.card .s{font-size:20px}.red{color:#d52e42}.hand,.face{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;min-height:96px}.playable{outline:3px solid var(--gold);transform:translateY(-7px)}.label{text-align:center;text-transform:uppercase;letter-spacing:.16em;font-size:10px;color:#ffffff77;margin:10px}.notice{text-align:center;color:#d7e3dc;min-height:25px;margin:7px}.back{background:repeating-linear-gradient(45deg,#19325a,#19325a 7px,#284c80 7px,#284c80 14px);color:white;border:4px solid #eef}.setupCard{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}.small{font-size:12px}.event{font-size:11px;color:#ffffff75;text-align:center;margin:8px;min-height:16px}.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#171c19;color:#fff;border:1px solid #ffffff20;border-radius:14px;padding:11px 15px;box-shadow:0 8px 30px #0008;z-index:20;max-width:90%;text-align:center}
+</style></head><body><div class="app">
+<header><div class="logo">THREES</div><div class="room" id="room"></div></header>
+<section id="home" class="panel center"><div class="title">THREES</div><p class="muted">Your game. Online.</p>
+<input id="name" placeholder="Your name" maxlength="18"><div class="row"><button class="primary" id="create">Create room</button></div>
+<div style="margin:10px"><input id="code" placeholder="ROOM CODE" maxlength="6"><button class="secondary" id="join">Join</button></div>
+<p class="small muted">Create a room, then send the code to your opponent.</p></section>
+<section id="game" class="hidden"><div class="players" id="players"></div><div class="notice" id="notice"></div>
+<div class="table"><div class="centerpile" id="pile"></div><div class="event" id="event"></div></div>
+<div class="label">Face-up cards</div><div class="face" id="face"></div><div class="label">Your hand</div><div class="hand" id="hand"></div>
+<div class="small muted center" id="setupHelp"></div><div id="toast" class="toast hidden"></div>
+<div class="row" style="margin-top:12px"><button class="primary" id="playSelected">Play selected</button><button class="secondary" id="jump">Jump in</button><button class="secondary" id="pickup">Pick up pile</button><button class="secondary" id="flip">Flip face-down</button><button class="secondary" id="lock">Lock setup</button><button class="primary" id="start">Start game</button><button class="primary hidden" id="rematch">Rematch</button></div>
+</section></div>
+<script>
+const s=io();let me=null,state=null,selected=new Set();const SESSION_KEY="threes.session";let session=JSON.parse(localStorage.getItem(SESSION_KEY)||"null");
+const $=x=>document.getElementById(x);const esc=x=>String(x).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+function card(c,back=false){return `<div class="card ${back?'back':c.color==='red'?'red':''}" data-id="${c.id}">${back?'':`<div class="r">${c.rank}</div><div class="s">${c.suit}</div>`}</div>`}
+function mine(){return state.players.find(p=>p.id===s.id)||null}
+function render(){
+ if(!state)return;
+ $('home').classList.add('hidden');$('game').classList.remove('hidden');$('room').textContent=`ROOM ${state.room}`;
+ $('players').innerHTML=state.players.map(p=>`<div class="player ${state.players[state.turn]?.id===p.id?'active':''}">${esc(p.name)} · ${p.total}${p.connected===false?' · disconnected':''}</div>`).join('');
+ $('notice').textContent=state.status==='waiting'?`Waiting for another player…`:state.phase==='setup'?'Swap your cards, then lock setup.':state.phase==='start'?`Starting card: ${state.startClaim?.color||''} ${state.startClaim?.rank||''}`:(state.turn===state.players.findIndex(p=>p.id===s.id)?`Your turn · ${state.effectiveRank||'ANY'}${state.lowSeven?' or lower':''}`:'Opponent turn');
+ const top=state.pile.at(-1);$('pile').innerHTML=top?card(top):'<span class="muted">PILE EMPTY</span>';$('event').textContent=state.event?.text||'';
+ const you=state.you;if(!you)return;
+ $('hand').innerHTML=you.hand.map(c=>card(c)).join('');$('face').innerHTML=you.up.map(c=>card(c)).join('');
+ document.querySelectorAll('#hand .card').forEach((el,i)=>{const c=you.hand[i];el.onclick=()=>setupOrPlayHand(c);if(setupSelected?.id===c.id)el.classList.add('playable');});
+ document.querySelectorAll('#face .card').forEach((el,i)=>{el.onclick=()=>setupOrPlayUp(you.up[i]);});
+ $('lock').classList.toggle('hidden',!(state.status==='setup'&&state.phase==='setup'));$('start').classList.toggle('hidden',!(state.status==='waiting'&&state.players.length>=2&&state.hostId===s.id));$('rematch').classList.toggle('hidden',state.status!=='finished'||state.hostId!==s.id);$('playSelected').classList.toggle('hidden',!(state.phase==='hand'||state.phase==='start'));$('jump').classList.toggle('hidden',!(state.status==='playing'&&state.players.length>=3&&state.phase!=='setup'));$('pickup').classList.toggle('hidden',!(state.phase==='hand'||state.phase==='up')||state.turn!==state.players.findIndex(p=>p.id===s.id));$('flip').classList.toggle('hidden',!(state.phase==='down'&&state.turn===state.players.findIndex(p=>p.id===s.id)));
+ $('setupHelp').textContent=state.status==='waiting'?(state.hostId===s.id&&state.players.length>=2?'Press Start game to deal the cards.':'Waiting for the host to start the game.'):(state.status==='finished'?(state.winner===state.players.findIndex(p=>p.id===s.id)?'You won!':'Game over — '+(state.players[state.winner]?.name||'Player')+' wins.'):(state.phase==='setup'?'Tap a hand card, then the face-up card you want to swap.':state.phase==='start'?'Select your starting card (and any same-rank cards), then play.':'');
+}
+let setupSelected=null;
+function setupOrPlayHand(c){
+  if(state.phase==='setup'){setupSelected=c;render();return;}
+  if(state.phase==='start'){toggle(c);return;}
+  toggle(c);
+}
+function setupOrPlayUp(c){
+  if(state.phase==='setup'&&setupSelected){s.emit('swap',{handId:setupSelected.id,upId:c.id});setupSelected=null;return;}
+  if(state.phase!=='setup')s.emit('play',{cardIds:[c.id]});
+}
+function toggle(c){if(state.phase==='setup'){return;} if(selected.has(c.id))selected.delete(c.id);else selected.add(c.id);$('hand').querySelector(`[data-id="${c.id}"]`)?.classList.toggle('playable',selected.has(c.id));}
+$('create').onclick=()=>s.emit('create',{name:$('name').value},r=>{if(r.roomId){me=r.roomId;session={roomId:r.roomId,reconnectToken:r.reconnectToken};localStorage.setItem(SESSION_KEY,JSON.stringify(session));$('room').textContent=`ROOM ${r.roomId}`}});
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(window._toast);window._toast=setTimeout(()=>t.classList.add('hidden'),2600)}
+$('join').onclick=()=>s.emit('join',{roomId:$('code').value,name:$('name').value},r=>{if(!r.ok)toast(r.error);else{session={roomId:r.roomId||$('code').value.toUpperCase(),reconnectToken:r.reconnectToken};localStorage.setItem(SESSION_KEY,JSON.stringify(session));}});
+$('start').onclick=()=>s.emit('start');$('lock').onclick=()=>s.emit('lockSetup');$('playSelected').onclick=()=>{if(!selected.size)return;if(state.phase==='start')s.emit('claimStart',{cardIds:[...selected]});else s.emit('play',{cardIds:[...selected]});selected.clear();};$('jump').onclick=()=>{if(!selected.size)return;s.emit('jumpIn',{cardIds:[...selected]});selected.clear();};
+$('pickup').onclick=()=>s.emit('pickup');$('flip').onclick=()=>s.emit('flipDown');$('rematch').onclick=()=>s.emit('rematch');
+s.on('session',x=>{session=x;localStorage.setItem(SESSION_KEY,JSON.stringify(session));});
+s.on('connect',()=>{if(session?.roomId&&session?.reconnectToken)s.emit('reconnectRoom',session,r=>{if(!r.ok){localStorage.removeItem(SESSION_KEY);session=null;toast(r.error)}})});
+s.on('state',x=>{state=x;selected.clear();render()});s.on('errorMessage',m=>toast(m));
+document.addEventListener('click',e=>{if(e.target.closest('#hand')&&e.target.classList.contains('card'))return;});
+</script></body></html>
