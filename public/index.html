@@ -57,10 +57,21 @@ document.querySelectorAll('#face .card').forEach((el,i)=>{const c=you.up[i];if(f
  const myPhase=(state.deckCount>0||you.hand.length>0)?'hand':(you.up.length>0?'up':'down');
  const source=myPhase==='up'?you.up:you.hand;
  const canPlayAny=(myPhase==='hand'||myPhase==='up')&&state.turn===myIndex&&source.some(canPlayCard);
- $('lock').classList.toggle('hidden',!(state.status==='setup'&&state.phase==='setup'));$('start').classList.toggle('hidden',!(state.status==='waiting'&&state.players.length>=2&&state.hostId===s.id));$('rematch').classList.toggle('hidden',state.status!=='finished'||state.hostId!==s.id);$('playSelected').classList.toggle('hidden',!(state.phase==='hand'||state.phase==='start')||myPhase!=='hand'||state.turn!==myIndex);$('jump').classList.toggle('hidden',!(state.status==='playing'&&state.players.length>=3&&state.phase!=='setup'));$('pickup').classList.toggle('hidden',!(state.status==='playing'&&(myPhase==='hand'||myPhase==='up')&&state.turn===myIndex&&state.pile.length>0&&!canPlayAny));$('flip').classList.toggle('hidden',!(state.status==='playing'&&myPhase==='down'&&state.turn===myIndex));
- if(state.status==='waiting') $('setupHelp').textContent=state.hostId===s.id&&state.players.length>=2?'Press Start game to deal the cards.':'Waiting for the host to start the game.';
+ // Treat setup as a first-class UI state. The server is authoritative, but the
+ // client also guards against a stale/inconsistent status flag so it can never
+ // show Start Game after cards have already been dealt.
+ const setupMode=state.phase==='setup'||state.status==='setup';
+ const waitingMode=state.status==='waiting'&&!setupMode;
+ $('lock').classList.toggle('hidden',!setupMode);
+ $('start').classList.toggle('hidden',!(waitingMode&&state.players.length>=2&&state.hostId===s.id));
+ $('rematch').classList.toggle('hidden',state.status!=='finished'||state.hostId!==s.id);
+ $('playSelected').classList.toggle('hidden',setupMode||!(state.phase==='hand'||state.phase==='start')||myPhase!=='hand'||state.turn!==myIndex);
+ $('jump').classList.toggle('hidden',setupMode||!(state.status==='playing'&&state.players.length>=3&&state.phase!=='setup'));
+ $('pickup').classList.toggle('hidden',setupMode||!(state.status==='playing'&&(myPhase==='hand'||myPhase==='up')&&state.turn===myIndex&&state.pile.length>0&&!canPlayAny));
+ $('flip').classList.toggle('hidden',setupMode||!(state.status==='playing'&&myPhase==='down'&&state.turn===myIndex));
+ if(waitingMode) $('setupHelp').textContent=state.hostId===s.id&&state.players.length>=2?'Press Start game to deal the cards.':'Waiting for the host to start the game.';
  else if(state.status==='finished') $('setupHelp').textContent=state.winner===state.players.findIndex(p=>p.id===s.id)?'You won!':'Game over — '+(state.players[state.winner]?.name||'Player')+' wins.';
- else if(state.phase==='setup') $('setupHelp').textContent='Tap a hand card, then the face-up card you want to swap.';
+ else if(setupMode) $('setupHelp').textContent='Tap a hand card, then the face-up card you want to swap. When finished, tap Lock setup.';
  else if(state.phase==='start') $('setupHelp').textContent='Select your starting card (and any same-rank cards), then play.';
  else $('setupHelp').textContent='';
 }
