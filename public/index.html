@@ -85,7 +85,7 @@ function setupOrPlayUp(c){
   if(state.phase==='setup'&&setupSelected){s.emit('swap',{handId:setupSelected.id,upId:c.id});setupSelected=null;return;}
   const youNow=mine();
   const myPhase=(state.deckCount>0||youNow.hand.length>0)?'hand':(youNow.up.length>0?'up':'down');
-  if(myPhase==='up')s.emit('playFaceUp',{cardId:c.id});else if(state.phase!=='setup')s.emit('play',{cardIds:[c.id]});
+  if(myPhase==='up')s.emit('play',{cardIds:[c.id]});else if(state.phase!=='setup')s.emit('play',{cardIds:[c.id]});
 }
 function toggle(c){if(state.phase==='setup'){return;} if(selected.has(c.id))selected.delete(c.id);else selected.add(c.id);$('hand').querySelector(`[data-id="${c.id}"]`)?.classList.toggle('playable',selected.has(c.id));}
 $('create').onclick=()=>{
